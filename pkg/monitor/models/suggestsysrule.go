@@ -1,3 +1,17 @@
+// Copyright 2019 Yunion
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package models
 
 import (
@@ -28,7 +42,7 @@ var (
 func init() {
 	SuggestSysRuleManager = &SSuggestSysRuleManager{
 		SVirtualResourceBaseManager: db.NewVirtualResourceBaseManager(
-			&DSuggestSysAlert{},
+			&DSuggestSysRuleConfig{},
 			"suggestsysrule_tbl",
 			"suggestsysrule",
 			"suggestsysrules",
@@ -70,7 +84,7 @@ type DSuggestSysRuleConfig struct {
 }
 
 func (man *SSuggestSysRuleManager) FetchSuggestSysAlartSettings(ruleTypes ...string) (map[string]*monitor.SSuggestSysAlertSetting, error) {
-	objs := make([]*DSuggestSysRuleConfig, 0)
+	objs := make([]DSuggestSysRuleConfig, 0)
 	suggestSysAlerSettingMap := make(map[string]*monitor.SSuggestSysAlertSetting, 0)
 	q := man.Query()
 	if q == nil {
@@ -142,7 +156,12 @@ func (man *SSuggestSysRuleManager) ValidateCreateData(
 	if dri, ok := suggestSysRuleDrivers[data.Type]; !ok {
 		return nil, httperrors.NewInputParameterError("not support type %q", data.Type)
 	} else {
-		err := dri.ValidateSetting(data.Setting)
+		//Type is uniq
+		err := db.NewNameValidator(man, ownerId, data.Type, "")
+		if err != nil {
+			return nil, err
+		}
+		err = dri.ValidateSetting(data.Setting)
 		if err != nil {
 			return nil, errors.Wrap(err, "validate setting error")
 		}

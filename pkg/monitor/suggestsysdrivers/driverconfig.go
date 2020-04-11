@@ -31,7 +31,7 @@ func init() {
 }
 
 func InitSuggestSysRuleCronjob() {
-	objs := make([]models.DSuggestSysRuleConfig, 0)
+	objs := make([]models.SSuggestSysRule, 0)
 	q := models.SuggestSysRuleManager.Query()
 	if q == nil {
 		fmt.Println(" query is nil")

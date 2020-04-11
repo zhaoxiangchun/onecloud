@@ -42,7 +42,7 @@ var (
 func init() {
 	SuggestSysRuleManager = &SSuggestSysRuleManager{
 		SVirtualResourceBaseManager: db.NewVirtualResourceBaseManager(
-			&DSuggestSysRuleConfig{},
+			&SSuggestSysRule{},
 			"suggestsysrule_tbl",
 			"suggestsysrule",
 			"suggestsysrules",
@@ -73,7 +73,7 @@ type SSuggestSysRuleManager struct {
 	db.SEnabledResourceBaseManager
 }
 
-type DSuggestSysRuleConfig struct {
+type SSuggestSysRule struct {
 	db.SVirtualResourceBase
 	db.SEnabledResourceBase
 
@@ -84,7 +84,7 @@ type DSuggestSysRuleConfig struct {
 }
 
 func (man *SSuggestSysRuleManager) FetchSuggestSysAlartSettings(ruleTypes ...string) (map[string]*monitor.SSuggestSysAlertSetting, error) {
-	objs := make([]DSuggestSysRuleConfig, 0)
+	objs := make([]SSuggestSysRule, 0)
 	suggestSysAlerSettingMap := make(map[string]*monitor.SSuggestSysAlertSetting, 0)
 	q := man.Query()
 	if q == nil {
@@ -108,14 +108,14 @@ func (man *SSuggestSysRuleManager) FetchSuggestSysAlartSettings(ruleTypes ...str
 }
 
 //根据数据库中查询得到的信息进行适配转换，同时更新drivers中的内容
-func (dConfig *DSuggestSysRuleConfig) getSuggestSysAlertSetting() (*monitor.SSuggestSysAlertSetting, error) {
+func (dConfig *SSuggestSysRule) getSuggestSysAlertSetting() (*monitor.SSuggestSysAlertSetting, error) {
 	setting := new(monitor.SSuggestSysAlertSetting)
 	switch dConfig.Type {
 	case monitor.EIP_UN_USED:
 		setting.EIPUnused = new(monitor.EIPUnused)
 		err := dConfig.Setting.Unmarshal(setting.EIPUnused)
 		if err != nil {
-			return nil, errors.Wrap(err, "DSuggestSysRuleConfig getSuggestSysAlertSetting error")
+			return nil, errors.Wrap(err, "SSuggestSysRule getSuggestSysAlertSetting error")
 		}
 	}
 	return setting, nil
@@ -169,7 +169,7 @@ func (man *SSuggestSysRuleManager) ValidateCreateData(
 	return &data, nil
 }
 
-func (rule *DSuggestSysRuleConfig) ValidateUpdateData(
+func (rule *SSuggestSysRule) ValidateUpdateData(
 	ctx context.Context, userCred mcclient.TokenCredential,
 	query jsonutils.JSONObject,
 	data monitor.SuggestSysRuleUpdateInput) (monitor.SuggestSysRuleUpdateInput, error) {
@@ -201,12 +201,12 @@ func (man *SSuggestSysRuleManager) FetchCustomizeColumns(
 		rows[i] = monitor.SuggestSysRuleDetails{
 			VirtualResourceDetails: virtRows[i],
 		}
-		rows[i] = objs[i].(*DSuggestSysRuleConfig).getMoreDetails(rows[i])
+		rows[i] = objs[i].(*SSuggestSysRule).getMoreDetails(rows[i])
 	}
 	return rows
 }
 
-func (self *DSuggestSysRuleConfig) getMoreDetails(out monitor.SuggestSysRuleDetails) monitor.SuggestSysRuleDetails {
+func (self *SSuggestSysRule) getMoreDetails(out monitor.SuggestSysRuleDetails) monitor.SuggestSysRuleDetails {
 	var err error
 	out.Setting, err = self.getSuggestSysAlertSetting()
 	if err != nil {
@@ -218,8 +218,17 @@ func (self *DSuggestSysRuleConfig) getMoreDetails(out monitor.SuggestSysRuleDeta
 	return out
 }
 
+func (self *SSuggestSysRule) GetExtraDetails(
+	ctx context.Context,
+	userCred mcclient.TokenCredential,
+	query jsonutils.JSONObject,
+	isList bool,
+) (monitor.SuggestSysRuleDetails, error) {
+	return monitor.SuggestSysRuleDetails{}, nil
+}
+
 //after create, update Cronjob's info
-func (self *DSuggestSysRuleConfig) PostCreate(ctx context.Context, userCred mcclient.TokenCredential, ownerId mcclient.IIdentityProvider, query jsonutils.JSONObject, data jsonutils.JSONObject) {
+func (self *SSuggestSysRule) PostCreate(ctx context.Context, userCred mcclient.TokenCredential, ownerId mcclient.IIdentityProvider, query jsonutils.JSONObject, data jsonutils.JSONObject) {
 	self.SVirtualResourceBase.PostCreate(ctx, userCred, ownerId, query, data)
 	cronman.GetCronJobManager().Remove(self.Name)
 	if self.Enabled.Bool() {
@@ -230,7 +239,7 @@ func (self *DSuggestSysRuleConfig) PostCreate(ctx context.Context, userCred mccl
 }
 
 //after update, update Cronjob's info
-func (self *DSuggestSysRuleConfig) PostUpdate(
+func (self *SSuggestSysRule) PostUpdate(
 	ctx context.Context, userCred mcclient.TokenCredential,
 	query jsonutils.JSONObject, data jsonutils.JSONObject) {
 	cronman.GetCronJobManager().Remove(self.Name)

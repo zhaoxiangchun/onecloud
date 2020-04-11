@@ -40,7 +40,7 @@ type SSuggestSysAlertManager struct {
 func init() {
 	SuggestSysAlertManager = &SSuggestSysAlertManager{
 		SVirtualResourceBaseManager: db.NewVirtualResourceBaseManager(
-			&DSuggestSysAlert{},
+			&SSuggestSysAlert{},
 			"suggestsysalert_tbl",
 			"suggestsysalert",
 			"suggestsysalerts",
@@ -49,7 +49,7 @@ func init() {
 	SuggestSysAlertManager.SetVirtualObject(SuggestSysAlertManager)
 }
 
-type DSuggestSysAlert struct {
+type SSuggestSysAlert struct {
 	db.SVirtualResourceBase
 	db.SEnabledResourceBase
 
@@ -155,7 +155,7 @@ func (manager *SSuggestSysAlertManager) QueryDistinctExtraField(q *sqlchemy.SQue
 	return q, httperrors.ErrNotFound
 }
 
-func (alert *DSuggestSysAlert) ValidateUpdateData(
+func (alert *SSuggestSysAlert) ValidateUpdateData(
 	ctx context.Context, userCred mcclient.TokenCredential,
 	query jsonutils.JSONObject,
 	data monitor.SuggestSysAlertUpdateInput) (monitor.SuggestSysAlertUpdateInput, error) {
@@ -175,7 +175,7 @@ func (alert *DSuggestSysAlert) ValidateUpdateData(
 	return data, nil
 }
 
-func (self *DSuggestSysAlert) GetExtraDetails(
+func (self *SSuggestSysAlert) GetExtraDetails(
 	ctx context.Context,
 	userCred mcclient.TokenCredential,
 	query jsonutils.JSONObject,

@@ -55,7 +55,7 @@ func (dri *EIPUnused) ValidateSetting(input *monitor.SSuggestSysAlertSetting) er
 }
 
 func (rule *EIPUnused) Run(instance *monitor.SSuggestSysAlertSetting) {
-	oldAlert := make([]models.DSuggestSysAlert, 0)
+	oldAlert := make([]models.SSuggestSysAlert, 0)
 	q := models.SuggestSysAlertManager.Query()
 	q.Equals("type", monitor.EIP_UN_USED)
 	err := db.FetchModelObjects(models.SuggestSysAlertManager, q, &oldAlert)
@@ -114,8 +114,8 @@ func (rule *EIPUnused) getEIPUnused(instance *monitor.SSuggestSysAlertSetting) (
 	return EIPUnsedArr, nil
 }
 
-func DealAlertData(oldAlerts []models.DSuggestSysAlert, newAlerts []jsonutils.JSONObject) {
-	oldMap := make(map[string]models.DSuggestSysAlert, 0)
+func DealAlertData(oldAlerts []models.SSuggestSysAlert, newAlerts []jsonutils.JSONObject) {
+	oldMap := make(map[string]models.SSuggestSysAlert, 0)
 	for _, alert := range oldAlerts {
 		oldMap[alert.ResId] = alert
 	}

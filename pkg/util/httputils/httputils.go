@@ -15,6 +15,7 @@
 package httputils
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -28,6 +29,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"yunion.io/x/log"
 
 	"github.com/fatih/color"
 	"github.com/moul/http2curl"
@@ -442,8 +444,35 @@ func JSONRequest(client *http.Client, ctx context.Context, method THttpMethod, u
 	}
 	header.Set("Content-Length", strconv.FormatInt(int64(len(bodystr)), 10))
 	header.Set("Content-Type", "application/json")
+	start := time.Now()
 	resp, err := Request(client, ctx, method, urlStr, header, jbody, debug)
-	return ParseJSONResponse(resp, err, debug)
+	end := time.Now()
+	headers, object, err := ParseJSONResponse(resp, err, debug)
+	log.Errorf("get response cost:%f s||parseJSON cost time:%f s", end.Sub(start).Seconds(),
+		time.Now().Sub(end).Seconds())
+	return headers, object, err
+}
+
+func JSONRequestUseBufio(client *http.Client, ctx context.Context, method THttpMethod, urlStr string,
+	header http.Header,
+	body jsonutils.JSONObject, debug bool) (http.Header, jsonutils.JSONObject, error) {
+	var bodystr string
+	if !gotypes.IsNil(body) {
+		bodystr = body.String()
+	}
+	jbody := strings.NewReader(bodystr)
+	if header == nil {
+		header = http.Header{}
+	}
+	header.Set("Content-Length", strconv.FormatInt(int64(len(bodystr)), 10))
+	header.Set("Content-Type", "application/json")
+	start := time.Now()
+	resp, err := Request(client, ctx, method, urlStr, header, jbody, debug)
+	end := time.Now()
+	headers, object, err := ParseJSONResponseUseBufio(resp, err, debug)
+	log.Errorf("get response cost:%f s||parseJSON cost time:%f s", end.Sub(start).Seconds(),
+		time.Now().Sub(end).Seconds())
+	return headers, object, err
 }
 
 // closeResponse close non nil response with any response Body.
@@ -593,6 +622,7 @@ func ParseJSONResponse(resp *http.Response, err error, debug bool) (http.Header,
 			red(string(dump))
 		}
 	}
+	start1 := time.Now()
 	rbody, err := ioutil.ReadAll(resp.Body)
 	if debug {
 		fmt.Fprintf(os.Stderr, "Response body: %s\n", string(rbody))
@@ -602,6 +632,7 @@ func ParseJSONResponse(resp *http.Response, err error, debug bool) (http.Header,
 	}
 
 	var jrbody jsonutils.JSONObject = nil
+	start2 := time.Now()
 	if len(rbody) > 0 && string(rbody[0]) == "{" {
 		var err error
 		jrbody, err = jsonutils.Parse(rbody)
@@ -611,6 +642,114 @@ func ParseJSONResponse(resp *http.Response, err error, debug bool) (http.Header,
 	}
 
 	if resp.StatusCode < 300 {
+		log.Errorf("ioutil.ReadAll cost time:%f s||jsonutils.Parse cost time:%f s",
+			start2.Sub(start1).Seconds(), time.Now().Sub(start2).Seconds())
+		return resp.Header, jrbody, nil
+	} else if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		ce := JSONClientError{}
+		ce.Code = resp.StatusCode
+		ce.Details = resp.Header.Get("Location")
+		ce.Class = "redirect"
+		return nil, nil, &ce
+	} else {
+		ce := JSONClientError{}
+
+		if jrbody == nil {
+			ce.Code = resp.StatusCode
+			ce.Details = resp.Status
+			if len(rbody) > 0 {
+				ce.Details = string(rbody)
+			}
+			return nil, nil, &ce
+		}
+
+		err = jrbody.Unmarshal(&ce)
+		if len(ce.Class) > 0 && ce.Code >= 400 && len(ce.Details) > 0 {
+			return nil, nil, &ce
+		}
+
+		jrbody1, err := jrbody.GetMap()
+		if err != nil {
+			err = jrbody.Unmarshal(&ce)
+			if err != nil {
+				ce.Details = err.Error()
+			}
+			return nil, nil, &ce
+		}
+		var jrbody2 jsonutils.JSONObject
+		if len(jrbody1) > 1 {
+			jrbody2 = jsonutils.Marshal(jrbody1)
+		} else {
+			for _, v := range jrbody1 {
+				jrbody2 = v
+			}
+		}
+		if ecode, _ := jrbody2.GetString("code"); len(ecode) > 0 {
+			code, err := strconv.Atoi(ecode)
+			if err != nil {
+				ce.Class = ecode
+			} else {
+				ce.Code = code
+			}
+		}
+		if ce.Code == 0 {
+			ce.Code = resp.StatusCode
+		}
+		if edetail := jsonutils.GetAnyString(jrbody2, []string{"message", "detail", "details", "error_msg"}); len(edetail) > 0 {
+			ce.Details = edetail
+		}
+		if eclass := jsonutils.GetAnyString(jrbody2, []string{"title", "type", "error_code"}); len(eclass) > 0 {
+			ce.Class = eclass
+		}
+		return nil, nil, &ce
+	}
+}
+
+func ParseJSONResponseUseBufio(resp *http.Response, err error, debug bool) (http.Header, jsonutils.JSONObject, error) {
+	if err != nil {
+		ce := JSONClientError{}
+		ce.Code = 499
+		ce.Details = err.Error()
+		return nil, nil, &ce
+	}
+	defer CloseResponse(resp)
+	if debug {
+		dump, _ := httputil.DumpResponse(resp, false)
+		if resp.StatusCode < 300 {
+			green(string(dump))
+		} else if resp.StatusCode < 400 {
+			yellow(string(dump))
+		} else {
+			red(string(dump))
+		}
+	}
+	start1 := time.Now()
+	respBufRead := bufio.NewReaderSize(resp.Body, int(resp.ContentLength))
+	rbody := make([]byte, 0)
+	n, err := respBufRead.Read(rbody)
+	if debug {
+		fmt.Fprintf(os.Stderr, "Response body: %s\n", string(rbody))
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("Fail to read body: %s", err)
+	}
+	if int64(n) != resp.ContentLength {
+		return nil, nil, fmt.Errorf("error read ContentLength")
+	}
+
+	var jrbody jsonutils.JSONObject = nil
+	start2 := time.Now()
+	if len(rbody) > 0 && string(rbody[0]) == "{" {
+		var err error
+		jrbody, err = jsonutils.Parse(rbody)
+		if err != nil && debug {
+			fmt.Fprintf(os.Stderr, "parsing json failed: %s", err)
+		}
+	}
+
+	if resp.StatusCode < 300 {
+		log.Errorf("ioutil.ReadAll cost time:%f s||jsonutils.Parse cost time:%f s",
+			start2.Sub(start1).Seconds(), time.Now().Sub(start2).Seconds())
 		return resp.Header, jrbody, nil
 	} else if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 		ce := JSONClientError{}

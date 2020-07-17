@@ -23,7 +23,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
-
+	"time"
 	"yunion.io/x/jsonutils"
 	"yunion.io/x/log"
 	"yunion.io/x/pkg/errors"
@@ -85,8 +85,10 @@ func (db *SInfluxdb) Write(data string, precision string) error {
 }
 
 func (db *SInfluxdb) Query(sql string) ([][]dbResult, error) {
-	nurl := fmt.Sprintf("%s/query?q=%s", db.accessUrl, url.QueryEscape(sql))
+	nurl := fmt.Sprintf("%s/query?db=%s&q=%s&epoch=ms", db.accessUrl, db.dbName, url.QueryEscape(sql))
+	start := time.Now()
 	_, body, err := httputils.JSONRequest(db.client, context.Background(), "POST", nurl, nil, nil, db.debug)
+	log.Errorf("post cost time:%f s", time.Now().Sub(start).Seconds())
 	if err != nil {
 		return nil, err
 	}
@@ -110,6 +112,97 @@ func (db *SInfluxdb) Query(sql string) ([][]dbResult, error) {
 		}
 	}
 	return rets, nil
+}
+
+func (db *SInfluxdb) QueryForEndPoint(sql string) ([][]dbResult, error) {
+	//start := time.Now()
+	//	//var body influxdb.Response
+	//	//request, err := db.createRequest(sql)
+	//	//if err != nil {
+	//	//	return body, err
+	//	//}
+	//	//response, err := db.client.Do(request)
+	//	//if err != nil {
+	//	//	return body, err
+	//	//}
+	//	//defer response.Body.Close()
+	//	//log.Errorf("post cost time:%f s", time.Now().Sub(start).Seconds())
+	//	//if err != nil {
+	//	//	return body, err
+	//	//}
+	//	//
+	//	//dec := json.NewDecoder(response.Body)
+	//	//dec.UseNumber()
+	//	//if err := dec.Decode(&body); err != nil {
+	//	//	return body, err
+	//	//}
+	//	//if body.Err != nil {
+	//	//	return body, body.Err
+	//	//}
+	//	//return body, nil
+
+	nurl := fmt.Sprintf("%s/query?db=%s&q=%s&epoch=ms", db.accessUrl, db.dbName, url.QueryEscape(sql))
+	start := time.Now()
+	_, body, err := httputils.JSONRequestUseBufio(db.client, context.Background(), "POST", nurl, nil, nil, db.debug)
+	log.Errorf("post cost time:%f s", time.Now().Sub(start).Seconds())
+	if err != nil {
+		return nil, err
+	}
+	if db.debug {
+		log.Debugf("influx query: %s %s", db.accessUrl, body)
+	}
+	results, err := body.GetArray("results")
+	if err != nil {
+		return nil, err
+	}
+	rets := make([][]dbResult, len(results))
+	for i := range results {
+		series, err := results[i].Get("series")
+		if err == nil {
+			ret := make([]dbResult, 0)
+			err = series.Unmarshal(&ret)
+			if err != nil {
+				return nil, err
+			}
+			rets[i] = ret
+		}
+	}
+	return rets, nil
+}
+
+func (db *SInfluxdb) createRequest(query string) (*http.Request, error) {
+	u, _ := url.Parse(db.accessUrl)
+	u.Path = path.Join(u.Path, "query")
+	req, err := func() (*http.Request, error) {
+		// use POST mode
+		bodyValues := url.Values{}
+		bodyValues.Add("q", query)
+		body := bodyValues.Encode()
+		return http.NewRequest(http.MethodPost, u.String(), strings.NewReader(body))
+	}()
+
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("User-Agent", "OneCloud Monitor")
+
+	params := req.URL.Query()
+	params.Set("db", db.dbName)
+	params.Set("epoch", "ms")
+
+	req.Header.Set("Content-type", "application/x-www-form-urlencoded")
+
+	req.URL.RawQuery = params.Encode()
+
+	/*if dsInfo.BasicAuth {
+		req.SetBasicAuth(dsinfo.BasicAuthUser, dsInfo.DecryptedBasicAuthPassword())
+	}
+
+	if !dsInfo.BasicAuth && dsInfo.User != "" {
+		req.SetBasicAuth(dsInfo.User, dsInfo.DecryptedPassword())
+	}*/
+	return req, nil
 }
 
 func (db *SInfluxdb) GetQuery(sql string) ([][]dbResult, error) {
